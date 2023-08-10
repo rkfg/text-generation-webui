@@ -17,6 +17,7 @@ pyyaml
 requests
 safetensors==0.3.2
 transformers==4.32.*
+rwkv
 scipy
 sentencepiece
 tensorboard

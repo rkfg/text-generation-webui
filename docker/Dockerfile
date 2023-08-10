@@ -68,5 +68,6 @@ RUN --mount=type=cache,target=/root/.cache/pip . /app/venv/bin/activate && \
 RUN cp /app/venv/lib/python3.10/site-packages/bitsandbytes/libbitsandbytes_cuda118.so /app/venv/lib/python3.10/site-packages/bitsandbytes/libbitsandbytes_cpu.so
 
 COPY . /app/
+RUN mkdir -p /.cache && chown 1000:1000 /.cache
 ENV CLI_ARGS=""
 CMD . /app/venv/bin/activate && python3 server.py ${CLI_ARGS}
