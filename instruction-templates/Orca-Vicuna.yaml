@@ -6,20 +6,19 @@ instruction_template: |-
       {%- endif -%}
   {%- endfor -%}
   {%- if not found_item -%}
-      {{- '[INST] <<SYS>>\n' + 'Answer the questions.' + '\n<</SYS>>\n\n' -}}
+      {{-'SYSTEM: ' + '' + '\n' -}}
   {%- endif %}
   {%- for message in messages %}
       {%- if message['role'] == 'system' -%}
-          {{- '[INST] <<SYS>>\n' + message['content'] + '\n<</SYS>>\n\n' -}}
+          {{-'SYSTEM: ' + message['content'] + '\n' -}}
       {%- else -%}
           {%- if message['role'] == 'user' -%}
-              {{-'' + message['content'] + ' [/INST] '-}}
+              {{-'USER: ' + message['content'] + '\n'-}}
           {%- else -%}
-              {{-'' + message['content'] + ' </s><s>[INST] ' -}}
+              {{-'ASSISTANT: ' + message['content'] + '</s>\n' -}}
           {%- endif -%}
       {%- endif -%}
   {%- endfor -%}
   {%- if add_generation_prompt -%}
-      {{-''-}}
+      {{-'ASSISTANT:'-}}
   {%- endif -%}
-
