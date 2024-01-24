@@ -54,7 +54,7 @@ sampler_hijack.hijack_samplers()
 
 
 def load_model(model_name, loader=None):
-    logger.info(f"Loading {model_name}...")
+    logger.info(f"Loading {model_name}")
     t0 = time.time()
 
     shared.is_seq2seq = False
@@ -73,6 +73,7 @@ def load_model(model_name, loader=None):
         'ctransformers': ctransformers_loader,
         'AutoAWQ': AutoAWQ_loader,
         'QuIP#': QuipSharp_loader,
+        'HQQ': HQQ_loader,
     }
 
     metadata = get_model_metadata(model_name)
@@ -411,6 +412,18 @@ def ExLlamav2_HF_loader(model_name):
     return Exllamav2HF.from_pretrained(model_name)
 
 
+def HQQ_loader(model_name):
+    from hqq.core.quantize import HQQBackend, HQQLinear
+    from hqq.engine.hf import HQQModelForCausalLM
+
+    logger.info(f"Loading HQQ model with backend: {shared.args.hqq_backend}")
+
+    model_dir = Path(f'{shared.args.model_dir}/{model_name}')
+    model = HQQModelForCausalLM.from_quantized(str(model_dir))
+    HQQLinear.set_backend(getattr(HQQBackend, shared.args.hqq_backend))
+    return model
+
+
 def RWKV_loader(model_name):
     '''
     This loader is not currently maintained as RWKV can now be loaded
@@ -469,6 +482,7 @@ def clear_torch_cache():
 
 def unload_model():
     shared.model = shared.tokenizer = None
+    shared.model_name = 'None'
     shared.lora_names = []
     shared.model_dirty_from_training = False
     clear_torch_cache()

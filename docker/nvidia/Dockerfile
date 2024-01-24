@@ -7,6 +7,7 @@ ARG APP_UID="${APP_UID:-6972}"
 ARG APP_GID="${APP_GID:-6972}"
 # create / update build env
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,rw \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt update && \
     apt install --no-install-recommends -y git vim build-essential python3-dev pip && \
     rm -rf /var/lib/apt/lists/*
@@ -49,6 +50,7 @@ COPY --chown=app:app_grp . /home/app/text-generation-webui
 RUN umask 0002 && \
     chmod g+rwX /home/app/text-generation-webui && \
     pip3 install --global --no-build-isolation --no-cache --no-index ./*.whl && \
+    pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu121 && \
     rm -r /home/app/wheels
 WORKDIR /home/app/text-generation-webui
 EXPOSE ${CONTAINER_PORT:-7860} ${CONTAINER_API_PORT:-5000} ${CONTAINER_API_STREAM_PORT:-5005}
