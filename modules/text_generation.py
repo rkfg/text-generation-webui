@@ -13,6 +13,7 @@ import transformers
 from transformers import LogitsProcessorList, is_torch_xpu_available
 
 import modules.shared as shared
+from modules.cache_utils import process_llamacpp_cache
 from modules.callbacks import (
     Iteratorize,
     Stream,
@@ -21,7 +22,7 @@ from modules.callbacks import (
 from modules.extensions import apply_extensions
 from modules.grammar.grammar_utils import initialize_grammar
 from modules.grammar.logits_process import GrammarConstrainedLogitsProcessor
-from modules.html_generator import generate_4chan_html, generate_basic_html
+from modules.html_generator import generate_basic_html
 from modules.logging_colors import logger
 from modules.models import clear_torch_cache, local_rank
 
@@ -45,10 +46,15 @@ def _generate_reply(question, state, stopping_strings=None, is_chat=False, escap
             yield ''
             return
 
-        if shared.model.__class__.__name__ in ['LlamaCppModel', 'Exllamav2Model', 'CtransformersModel']:
+        if shared.model.__class__.__name__ in ['LlamaCppModel', 'Exllamav2Model']:
             generate_func = generate_reply_custom
         else:
             generate_func = generate_reply_HF
+
+    if generate_func != generate_reply_HF and shared.args.verbose:
+        logger.info("PROMPT=")
+        print(question)
+        print()
 
     # Prepare the input
     original_question = question
@@ -65,10 +71,6 @@ def _generate_reply(question, state, stopping_strings=None, is_chat=False, escap
         if type(st) is list and len(st) > 0:
             all_stop_strings += st
 
-    if shared.args.verbose:
-        logger.info("PROMPT=")
-        print(question)
-
     shared.stop_everything = False
     clear_torch_cache()
     seed = set_manual_seed(state['seed'])
@@ -79,19 +81,16 @@ def _generate_reply(question, state, stopping_strings=None, is_chat=False, escap
         state = copy.deepcopy(state)
         state['stream'] = True
 
-    min_update_interval = 0
-    if state.get('max_updates_second', 0) > 0:
-        min_update_interval = 1 / state['max_updates_second']
-
     # Generate
     for reply in generate_func(question, original_question, seed, state, stopping_strings, is_chat=is_chat):
         reply, stop_found = apply_stopping_strings(reply, all_stop_strings)
         if escape_html:
             reply = html.escape(reply)
+
         if is_stream:
             cur_time = time.time()
 
-            # Maximum number of tokens/second
+            # Limit number of tokens/second to make text readable in real time
             if state['max_tokens_second'] > 0:
                 diff = 1 / state['max_tokens_second'] - (cur_time - last_update)
                 if diff > 0:
@@ -99,13 +98,8 @@ def _generate_reply(question, state, stopping_strings=None, is_chat=False, escap
 
                 last_update = time.time()
                 yield reply
-
-            # Limit updates to avoid lag in the Gradio UI
-            # API updates are not limited
             else:
-                if cur_time - last_update > min_update_interval:
-                    last_update = cur_time
-                    yield reply
+                yield reply
 
         if stop_found or (state['max_tokens_second'] > 0 and shared.stop_everything):
             break
@@ -120,7 +114,7 @@ def encode(prompt, add_special_tokens=True, add_bos_token=True, truncation_lengt
     if shared.tokenizer is None:
         raise ValueError('No tokenizer is loaded')
 
-    if shared.model.__class__.__name__ in ['LlamaCppModel', 'CtransformersModel', 'Exllamav2Model']:
+    if shared.model.__class__.__name__ in ['LlamaCppModel', 'Exllamav2Model']:
         input_ids = shared.tokenizer.encode(str(prompt))
         if shared.model.__class__.__name__ not in ['Exllamav2Model']:
             input_ids = np.array(input_ids).reshape(1, len(input_ids))
@@ -134,7 +128,7 @@ def encode(prompt, add_special_tokens=True, add_bos_token=True, truncation_lengt
     if truncation_length is not None:
         input_ids = input_ids[:, -truncation_length:]
 
-    if shared.model.__class__.__name__ in ['LlamaCppModel', 'Exllamav2Model', 'CtransformersModel'] or shared.args.cpu:
+    if shared.model.__class__.__name__ in ['LlamaCppModel', 'Exllamav2Model'] or shared.args.cpu:
         return input_ids
     elif shared.args.deepspeed:
         return input_ids.to(device=local_rank)
@@ -192,23 +186,7 @@ def generate_reply_wrapper(question, state, stopping_strings=None):
 
 
 def formatted_outputs(reply, model_name):
-    if any(s in model_name for s in ['gpt-4chan', 'gpt4chan']):
-        reply = fix_gpt4chan(reply)
-        return html.unescape(reply), generate_4chan_html(reply)
-    else:
-        return html.unescape(reply), generate_basic_html(reply)
-
-
-def fix_gpt4chan(s):
-    """
-    Removes empty replies from gpt4chan outputs
-    """
-    for i in range(10):
-        s = re.sub("--- [0-9]*\n>>[0-9]*\n---", "---", s)
-        s = re.sub("--- [0-9]*\n *\n---", "---", s)
-        s = re.sub("--- [0-9]*\n\n\n---", "---", s)
-
-    return s
+    return html.unescape(reply), generate_basic_html(reply)
 
 
 def fix_galactica(s):
@@ -285,8 +263,14 @@ def get_reply_from_output_ids(output_ids, state=None, starting_from=0):
 
 def generate_reply_HF(question, original_question, seed, state, stopping_strings=None, is_chat=False):
     generate_params = {}
-    for k in ['max_new_tokens', 'temperature', 'temperature_last', 'dynamic_temperature', 'dynatemp_low', 'dynatemp_high', 'dynatemp_exponent', 'top_p', 'min_p', 'top_k', 'repetition_penalty', 'presence_penalty', 'frequency_penalty', 'repetition_penalty_range', 'typical_p', 'tfs', 'top_a', 'guidance_scale', 'penalty_alpha', 'mirostat_mode', 'mirostat_tau', 'mirostat_eta', 'do_sample', 'encoder_repetition_penalty', 'no_repeat_ngram_size', 'min_length', 'num_beams', 'length_penalty', 'early_stopping']:
-        generate_params[k] = state[k]
+    for k in ['max_new_tokens', 'temperature', 'temperature_last', 'dynamic_temperature', 'dynatemp_low', 'dynatemp_high', 'dynatemp_exponent', 'smoothing_factor', 'smoothing_curve', 'top_p', 'min_p', 'top_k', 'repetition_penalty', 'presence_penalty', 'frequency_penalty', 'repetition_penalty_range', 'typical_p', 'tfs', 'top_a', 'guidance_scale', 'penalty_alpha', 'mirostat_mode', 'mirostat_tau', 'mirostat_eta', 'do_sample', 'encoder_repetition_penalty', 'no_repeat_ngram_size']:
+        if k in state:
+            generate_params[k] = state[k]
+
+    if isinstance(state['sampler_priority'], list) and len(state['sampler_priority']) > 0:
+        generate_params['sampler_priority'] = state['sampler_priority']
+    elif isinstance(state['sampler_priority'], str) and state['sampler_priority'].strip() != '':
+        generate_params['sampler_priority'] = [x.strip() for x in state['sampler_priority'].replace('\n', ',').split(',') if x.strip()]
 
     if state['negative_prompt'] != '':
         generate_params['negative_prompt_ids'] = encode(state['negative_prompt'])
@@ -352,6 +336,16 @@ def generate_reply_HF(question, original_question, seed, state, stopping_strings
         filtered_params = {key: value for key, value in generate_params.items() if not isinstance(value, torch.Tensor)}
         pprint.PrettyPrinter(indent=4, sort_dicts=False).pprint(filtered_params)
         print()
+
+        logger.info("PROMPT=")
+        print(decode(input_ids[0], skip_special_tokens=False))
+        print()
+
+    # Handle StreamingLLM for llamacpp_HF
+    if shared.model.__class__.__name__ == 'LlamacppHF' and shared.args.streaming_llm:
+        tmp = process_llamacpp_cache(shared.model.model, input_ids[-1].tolist(), shared.model.model._input_ids.tolist())
+        shared.model.past_seq = torch.tensor(tmp)
+        shared.model.save_cache()
 
     t0 = time.time()
     try:
