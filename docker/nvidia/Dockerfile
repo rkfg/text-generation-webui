@@ -17,5 +17,6 @@ RUN GPU_CHOICE=A USE_CUDA118=FALSE LAUNCH_AFTER_INSTALL=FALSE INSTALL_EXTENSIONS
 COPY CMD_FLAGS.txt /home/app/text-generation-webui/
 EXPOSE ${CONTAINER_PORT:-7860} ${CONTAINER_API_PORT:-5000} ${CONTAINER_API_STREAM_PORT:-5005}
 WORKDIR /home/app/text-generation-webui
+RUN mkdir -p /home/app/text-generation-webui/.cache && chown -R $APP_UID:$APP_GID /home/app/text-generation-webui/.cache
 # set umask to ensure group read / write at runtime
 CMD umask 0002 && export HOME=/home/app/text-generation-webui && ./start_linux.sh
