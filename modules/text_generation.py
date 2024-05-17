@@ -3,14 +3,17 @@ import copy
 import html
 import pprint
 import random
-import re
 import time
 import traceback
 
 import numpy as np
 import torch
 import transformers
-from transformers import LogitsProcessorList, is_torch_xpu_available
+from transformers import (
+    LogitsProcessorList,
+    is_torch_npu_available,
+    is_torch_xpu_available
+)
 
 import modules.shared as shared
 from modules.cache_utils import process_llamacpp_cache
@@ -24,7 +27,7 @@ from modules.grammar.grammar_utils import initialize_grammar
 from modules.grammar.logits_process import GrammarConstrainedLogitsProcessor
 from modules.html_generator import generate_basic_html
 from modules.logging_colors import logger
-from modules.models import clear_torch_cache, local_rank
+from modules.models import clear_torch_cache
 
 
 def generate_reply(*args, **kwargs):
@@ -81,6 +84,10 @@ def _generate_reply(question, state, stopping_strings=None, is_chat=False, escap
         state = copy.deepcopy(state)
         state['stream'] = True
 
+    min_update_interval = 0
+    if state.get('max_updates_second', 0) > 0:
+        min_update_interval = 1 / state['max_updates_second']
+
     # Generate
     for reply in generate_func(question, original_question, seed, state, stopping_strings, is_chat=is_chat):
         reply, stop_found = apply_stopping_strings(reply, all_stop_strings)
@@ -98,7 +105,14 @@ def _generate_reply(question, state, stopping_strings=None, is_chat=False, escap
 
                 last_update = time.time()
                 yield reply
+
+            # Limit updates to avoid lag in the Gradio UI
+            # API updates are not limited
             else:
+                if cur_time - last_update > min_update_interval:
+                    last_update = cur_time
+                    yield reply
+
                 yield reply
 
         if stop_found or (state['max_tokens_second'] > 0 and shared.stop_everything):
@@ -131,12 +145,15 @@ def encode(prompt, add_special_tokens=True, add_bos_token=True, truncation_lengt
     if shared.model.__class__.__name__ in ['LlamaCppModel', 'Exllamav2Model'] or shared.args.cpu:
         return input_ids
     elif shared.args.deepspeed:
-        return input_ids.to(device=local_rank)
+        import deepspeed
+        return input_ids.to(deepspeed.get_accelerator().current_device_name())
     elif torch.backends.mps.is_available():
         device = torch.device('mps')
         return input_ids.to(device)
     elif is_torch_xpu_available():
         return input_ids.to("xpu:0")
+    elif is_torch_npu_available():
+        return input_ids.to("npu:0")
     else:
         return input_ids.cuda()
 
@@ -189,20 +206,6 @@ def formatted_outputs(reply, model_name):
     return html.unescape(reply), generate_basic_html(reply)
 
 
-def fix_galactica(s):
-    """
-    Fix the LaTeX equations in GALACTICA
-    """
-    s = s.replace(r'\[', r'$')
-    s = s.replace(r'\]', r'$')
-    s = s.replace(r'\(', r'$')
-    s = s.replace(r'\)', r'$')
-    s = s.replace(r'$$', r'$')
-    s = re.sub(r'\n', r'\n\n', s)
-    s = re.sub(r"\n{3,}", "\n\n", s)
-    return s
-
-
 def set_manual_seed(seed):
     seed = int(seed)
     if seed == -1:
@@ -213,6 +216,8 @@ def set_manual_seed(seed):
         torch.cuda.manual_seed_all(seed)
     elif is_torch_xpu_available():
         torch.xpu.manual_seed_all(seed)
+    elif is_torch_npu_available():
+        torch.npu.manual_seed_all(seed)
 
     return seed
 

@@ -56,12 +56,13 @@ def get_model_metadata(model):
             model_file = list(path.glob('*.gguf'))[0]
 
         metadata = metadata_gguf.load_metadata(model_file)
-        if 'llama.context_length' in metadata:
-            model_settings['n_ctx'] = metadata['llama.context_length']
-        if 'llama.rope.scale_linear' in metadata:
-            model_settings['compress_pos_emb'] = metadata['llama.rope.scale_linear']
-        if 'llama.rope.freq_base' in metadata:
-            model_settings['rope_freq_base'] = metadata['llama.rope.freq_base']
+        for k in metadata:
+            if k.endswith('context_length'):
+                model_settings['n_ctx'] = metadata[k]
+            elif k.endswith('rope.freq_base'):
+                model_settings['rope_freq_base'] = metadata[k]
+            elif k.endswith('rope.scale_linear'):
+                model_settings['compress_pos_emb'] = metadata[k]
         if 'tokenizer.chat_template' in metadata:
             template = metadata['tokenizer.chat_template']
             eos_token = metadata['tokenizer.ggml.tokens'][metadata['tokenizer.ggml.eos_token_id']]
@@ -70,6 +71,7 @@ def get_model_metadata(model):
             template = template.replace('bos_token', "'{}'".format(bos_token))
 
             template = re.sub(r'raise_exception\([^)]*\)', "''", template)
+            template = re.sub(r'{% if add_generation_prompt %}.*', '', template, flags=re.DOTALL)
             model_settings['instruction_template'] = 'Custom (obtained from model metadata)'
             model_settings['instruction_template_str'] = template
 
@@ -77,7 +79,7 @@ def get_model_metadata(model):
         # Transformers metadata
         if hf_metadata is not None:
             metadata = json.loads(open(path, 'r', encoding='utf-8').read())
-            for k in ['max_position_embeddings', 'max_seq_len']:
+            for k in ['max_position_embeddings', 'model_max_length', 'max_seq_len']:
                 if k in metadata:
                     model_settings['truncation_length'] = metadata[k]
                     model_settings['max_seq_len'] = metadata[k]
@@ -129,14 +131,12 @@ def get_model_metadata(model):
                     template = template.replace(k, "'{}'".format(value))
 
             template = re.sub(r'raise_exception\([^)]*\)', "''", template)
+            template = re.sub(r'{% if add_generation_prompt %}.*', '', template, flags=re.DOTALL)
             model_settings['instruction_template'] = 'Custom (obtained from model metadata)'
             model_settings['instruction_template_str'] = template
 
     if 'instruction_template' not in model_settings:
         model_settings['instruction_template'] = 'Alpaca'
-
-    if model_settings['instruction_template'] != 'Custom (obtained from model metadata)':
-        model_settings['instruction_template_str'] = chat.load_instruction_template(model_settings['instruction_template'])
 
     # Ignore rope_freq_base if set to the default value
     if 'rope_freq_base' in model_settings and model_settings['rope_freq_base'] == 10000:
@@ -148,6 +148,10 @@ def get_model_metadata(model):
         if re.match(pat.lower(), model.lower()):
             for k in settings[pat]:
                 model_settings[k] = settings[pat][k]
+
+    # Load instruction template if defined by name rather than by value
+    if model_settings['instruction_template'] != 'Custom (obtained from model metadata)':
+        model_settings['instruction_template_str'] = chat.load_instruction_template(model_settings['instruction_template'])
 
     return model_settings
 

@@ -19,4 +19,4 @@ EXPOSE ${CONTAINER_PORT:-7860} ${CONTAINER_API_PORT:-5000} ${CONTAINER_API_STREA
 WORKDIR /home/app/text-generation-webui
 RUN mkdir -p /home/app/text-generation-webui/.cache && chown -R $APP_UID:$APP_GID /home/app/text-generation-webui/.cache
 # set umask to ensure group read / write at runtime
-CMD umask 0002 && export HOME=/home/app/text-generation-webui && ./start_linux.sh
+CMD umask 0002 && export HOME=/home/app/text-generation-webui && ./start_linux.sh --listen
