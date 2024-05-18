@@ -28,7 +28,11 @@ from modules.grammar.logits_process import GrammarConstrainedLogitsProcessor
 from modules.html_generator import generate_basic_html
 from modules.logging_colors import logger
 from modules.models import clear_torch_cache
+from multiprocessing.dummy import Pool
+from multiprocessing.pool import ThreadPool
+from requests import post
 
+metric_pool: ThreadPool = Pool(10)
 
 def generate_reply(*args, **kwargs):
     shared.generation_lock.acquire()
@@ -402,7 +406,10 @@ def generate_reply_HF(question, original_question, seed, state, stopping_strings
         t1 = time.time()
         original_tokens = len(original_input_ids[0])
         new_tokens = len(output) - (original_tokens if not shared.is_seq2seq else 0)
-        print(f'Output generated in {(t1-t0):.2f} seconds ({new_tokens/(t1-t0):.2f} tokens/s, {new_tokens} tokens, context {original_tokens}, seed {seed})')
+        maybe_send_metrics(new_tokens)
+        print(
+            f"Output generated in {(t1-t0):.2f} seconds ({new_tokens/(t1-t0):.2f} tokens/s, {new_tokens} tokens, context {original_tokens}, seed {seed})"
+        )
         return
 
 
@@ -431,5 +438,20 @@ def generate_reply_custom(question, original_question, seed, state, stopping_str
         t1 = time.time()
         original_tokens = len(encode(original_question)[0])
         new_tokens = len(encode(original_question + reply)[0]) - original_tokens
+        maybe_send_metrics(new_tokens)
         print(f'Output generated in {(t1-t0):.2f} seconds ({new_tokens/(t1-t0):.2f} tokens/s, {new_tokens} tokens, context {original_tokens}, seed {seed})')
         return
+
+def maybe_send_metrics(new_tokens: int):
+    if shared.args.metrics_url and shared.args.metrics_password and shared.args.metrics_name:
+        metric_pool.apply_async(
+            post,
+            [shared.args.metrics_url],
+            {
+                "json": {
+                        "password": shared.args.metrics_password,
+                        "name": shared.args.metrics_name,
+                        "value": new_tokens
+                    }
+            },
+        )

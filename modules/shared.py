@@ -205,6 +205,27 @@ group.add_argument('--nowebui', action='store_true', help='Do not launch the Gra
 group = parser.add_argument_group('Multimodal')
 group.add_argument('--multimodal-pipeline', type=str, default=None, help='The multimodal pipeline to use. Examples: llava-7b, llava-13b.')
 
+group = parser.add_argument_group("Metrics")
+group.add_argument(
+    "--metrics-url",
+    type=str,
+    default=None,
+    help="URL to post the number of generated tokens to. Example: http://proxy:8080/metrics",
+)
+group.add_argument(
+    "--metrics-password",
+    type=str,
+    default=None,
+    help="Password for posting metrics",
+)
+group.add_argument(
+    "--metrics-name",
+    type=str,
+    default=None,
+    help="Name of the metric",
+)
+
+
 # Deprecated parameters
 # group = parser.add_argument_group('Deprecated')
 
