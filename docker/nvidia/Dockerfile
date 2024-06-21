@@ -11,7 +11,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,rw \
     apt install --no-install-recommends -y git vim build-essential python3-dev pip bash curl && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /home/app/
-RUN git clone https://github.com/rkfg/text-generation-webui.git
+ARG VERSION
+RUN git clone --branch $VERSION https://github.com/SD-inst/text-generation-webui.git
 RUN mkdir -p /home/app/text-generation-webui/.cache && chown -R $APP_UID:$APP_GID /home/app/text-generation-webui/.cache
 WORKDIR /home/app/text-generation-webui
 RUN git checkout local
