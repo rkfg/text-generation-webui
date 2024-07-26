@@ -21,6 +21,7 @@ loaders_and_params = OrderedDict({
         'trust_remote_code',
         'no_use_fast',
         'use_flash_attention_2',
+        'use_eager_attention',
         'alpha_value',
         'compress_pos_emb',
         'disable_exllama',
@@ -30,6 +31,8 @@ loaders_and_params = OrderedDict({
     'llama.cpp': [
         'n_ctx',
         'n_gpu_layers',
+        'cache_8bit',
+        'cache_4bit',
         'tensor_split',
         'n_batch',
         'threads',
@@ -51,6 +54,8 @@ loaders_and_params = OrderedDict({
     'llamacpp_HF': [
         'n_ctx',
         'n_gpu_layers',
+        'cache_8bit',
+        'cache_4bit',
         'tensor_split',
         'n_batch',
         'threads',
@@ -79,6 +84,8 @@ loaders_and_params = OrderedDict({
         'max_seq_len',
         'cfg_cache',
         'no_flash_attn',
+        'no_xformers',
+        'no_sdpa',
         'num_experts_per_token',
         'cache_8bit',
         'cache_4bit',
@@ -92,6 +99,8 @@ loaders_and_params = OrderedDict({
         'gpu_split',
         'max_seq_len',
         'no_flash_attn',
+        'no_xformers',
+        'no_sdpa',
         'num_experts_per_token',
         'cache_8bit',
         'cache_4bit',
@@ -117,15 +126,6 @@ loaders_and_params = OrderedDict({
         'trust_remote_code',
         'no_use_fast',
         'autogptq_info',
-    ],
-    'AutoAWQ': [
-        'cpu_memory',
-        'gpu_memory',
-        'auto_devices',
-        'max_seq_len',
-        'no_inject_fused_attention',
-        'trust_remote_code',
-        'no_use_fast',
     ],
     'HQQ': [
         'hqq_backend',
@@ -191,7 +191,6 @@ def transformers_samplers():
 loaders_samplers = {
     'Transformers': transformers_samplers(),
     'AutoGPTQ': transformers_samplers(),
-    'AutoAWQ': transformers_samplers(),
     'HQQ': transformers_samplers(),
     'ExLlamav2': {
         'temperature',
