@@ -96,7 +96,7 @@ async def options_route():
 
 @app.post('/v1/completions', response_model=CompletionResponse, dependencies=check_key)
 async def openai_completions(request: Request, request_data: CompletionRequest):
-    with completion_mutex:
+    async with completion_mutex:
         path = request.url.path
         is_legacy = "/generate" in path
 
@@ -120,7 +120,7 @@ async def openai_completions(request: Request, request_data: CompletionRequest):
 
 @app.post('/v1/chat/completions', response_model=ChatCompletionResponse, dependencies=check_key)
 async def openai_chat_completions(request: Request, request_data: ChatCompletionRequest):
-    with completion_mutex:
+    async with completion_mutex:
         path = request.url.path
         is_legacy = "/generate" in path
 

@@ -28,7 +28,10 @@ from modules.text_generation import (
     generate_reply,
     get_reply_from_output_ids
 )
+from modules.models import load_model, unload_model
 
+model_name_override = None
+model_name_orig = shared.model_name
 
 class LogitsBiasProcessor(LogitsProcessor):
     def __init__(self, logit_bias={}):
@@ -212,6 +215,25 @@ def convert_history(history):
 
     return user_input, system_message, {'internal': chat_dialogue, 'visible': copy.deepcopy(chat_dialogue)}
 
+def maybe_update_model(requested_model: str):
+    global model_name_override, model_name_orig
+    print(f"requested_model: {requested_model}, model_name_override: {model_name_override} model_name_orig: {model_name_orig} shared.model_name: {shared.model_name} is model_name_orig None? {model_name_orig is None} is shared.model_name None? {shared.model_name is None}")
+    if (model_name_orig is None or model_name_orig == 'None') and shared.model_name is not None:
+        print("Setting model_name_orig")
+        model_name_orig = shared.model_name
+    if (requested_model is None or requested_model == 'None') and model_name_override is not None:
+        model_name_override = None
+        print("Unloading model to go back from override")
+        unload_model()
+        print(f"Loading model {model_name_orig}")
+        shared.model, shared.tokenizer = load_model(model_name_orig)
+    if requested_model is not None and requested_model != 'None' and model_name_override != requested_model:
+        model_name_override = requested_model
+        print("Unloading model for override")
+        unload_model()
+        print(f"Loading model {requested_model}")
+        shared.model, shared.tokenizer = load_model(requested_model)
+
 
 def chat_completions_common(body: dict, is_legacy: bool = False, stream=False, prompt_only=False) -> dict:
     if body.get('functions', []):
@@ -291,7 +313,7 @@ def chat_completions_common(body: dict, is_legacy: bool = False, stream=False, p
 
     requested_model = generate_params.pop('model')
     logprob_proc = generate_params.pop('logprob_proc', None)
-
+    maybe_update_model(requested_model)
     def chat_streaming_chunk(content):
         # begin streaming
         chunk = {
@@ -405,6 +427,7 @@ def completions_common(body: dict, is_legacy: bool = False, stream=False):
     logprob_proc = generate_params.pop('logprob_proc', None)
     suffix = body['suffix'] if body['suffix'] else ''
     echo = body['echo']
+    maybe_update_model(requested_model)
 
     if not stream:
         prompt_arg = body[prompt_str]
