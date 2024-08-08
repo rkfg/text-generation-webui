@@ -59,7 +59,7 @@ params = {
     'debug': 0
 }
 
-
+completion_mutex = asyncio.Lock()
 streaming_semaphore = asyncio.Semaphore(1)
 
 
@@ -96,48 +96,50 @@ async def options_route():
 
 @app.post('/v1/completions', response_model=CompletionResponse, dependencies=check_key)
 async def openai_completions(request: Request, request_data: CompletionRequest):
-    path = request.url.path
-    is_legacy = "/generate" in path
+    with completion_mutex:
+        path = request.url.path
+        is_legacy = "/generate" in path
 
-    if request_data.stream:
-        async def generator():
-            async with streaming_semaphore:
-                response = OAIcompletions.stream_completions(to_dict(request_data), is_legacy=is_legacy)
-                for resp in response:
-                    disconnected = await request.is_disconnected()
-                    if disconnected:
-                        break
+        if request_data.stream:
+            async def generator():
+                async with streaming_semaphore:
+                    response = OAIcompletions.stream_completions(to_dict(request_data), is_legacy=is_legacy)
+                    for resp in response:
+                        disconnected = await request.is_disconnected()
+                        if disconnected:
+                            break
 
-                    yield {"data": json.dumps(resp)}
+                        yield {"data": json.dumps(resp)}
 
-        return EventSourceResponse(generator())  # SSE streaming
+            return EventSourceResponse(generator())  # SSE streaming
 
-    else:
-        response = OAIcompletions.completions(to_dict(request_data), is_legacy=is_legacy)
-        return JSONResponse(response)
+        else:
+            response = OAIcompletions.completions(to_dict(request_data), is_legacy=is_legacy)
+            return JSONResponse(response)
 
 
 @app.post('/v1/chat/completions', response_model=ChatCompletionResponse, dependencies=check_key)
 async def openai_chat_completions(request: Request, request_data: ChatCompletionRequest):
-    path = request.url.path
-    is_legacy = "/generate" in path
+    with completion_mutex:
+        path = request.url.path
+        is_legacy = "/generate" in path
 
-    if request_data.stream:
-        async def generator():
-            async with streaming_semaphore:
-                response = OAIcompletions.stream_chat_completions(to_dict(request_data), is_legacy=is_legacy)
-                for resp in response:
-                    disconnected = await request.is_disconnected()
-                    if disconnected:
-                        break
+        if request_data.stream:
+            async def generator():
+                async with streaming_semaphore:
+                    response = OAIcompletions.stream_chat_completions(to_dict(request_data), is_legacy=is_legacy)
+                    for resp in response:
+                        disconnected = await request.is_disconnected()
+                        if disconnected:
+                            break
 
-                    yield {"data": json.dumps(resp)}
+                        yield {"data": json.dumps(resp)}
 
-        return EventSourceResponse(generator())  # SSE streaming
+            return EventSourceResponse(generator())  # SSE streaming
 
-    else:
-        response = OAIcompletions.chat_completions(to_dict(request_data), is_legacy=is_legacy)
-        return JSONResponse(response)
+        else:
+            response = OAIcompletions.chat_completions(to_dict(request_data), is_legacy=is_legacy)
+            return JSONResponse(response)
 
 
 @app.get("/v1/models", dependencies=check_key)
