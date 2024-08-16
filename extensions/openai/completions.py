@@ -30,7 +30,6 @@ from modules.text_generation import (
 )
 from modules.models import load_model, unload_model
 
-model_name_override = None
 model_name_orig = shared.model_name
 
 class LogitsBiasProcessor(LogitsProcessor):
@@ -216,19 +215,17 @@ def convert_history(history):
     return user_input, system_message, {'internal': chat_dialogue, 'visible': copy.deepcopy(chat_dialogue)}
 
 def maybe_update_model(requested_model: str):
-    global model_name_override, model_name_orig
-    print(f"requested_model: {requested_model}, model_name_override: {model_name_override} model_name_orig: {model_name_orig} shared.model_name: {shared.model_name} is model_name_orig None? {model_name_orig is None} is shared.model_name None? {shared.model_name is None}")
+    global model_name_orig
+    print(f"requested_model: {requested_model}, model_name_orig: {model_name_orig}, shared.model_name: {shared.model_name}")
     if (model_name_orig is None or model_name_orig == 'None') and shared.model_name is not None:
         print("Setting model_name_orig")
         model_name_orig = shared.model_name
-    if (requested_model is None or requested_model == 'None') and model_name_override is not None:
-        model_name_override = None
+    if (requested_model is None or requested_model == 'None') and model_name_orig != shared.model_name:
         print("Unloading model to go back from override")
         unload_model()
         print(f"Loading model {model_name_orig}")
         shared.model, shared.tokenizer = load_model(model_name_orig)
-    if requested_model is not None and requested_model != 'None' and model_name_override != requested_model:
-        model_name_override = requested_model
+    if requested_model is not None and requested_model != 'None' and requested_model != shared.model_name:
         print("Unloading model for override")
         unload_model()
         print(f"Loading model {requested_model}")
